@@ -71,64 +71,84 @@ def multicpu_generator(args, tqdm_position, config):
         dataloader = dataloader_cls(config["dev_file"], **config)
         for task in config["tasks"]:
             _kwargs = {**config, **config["task_configuration"][task]}
-            sampler = sampler_cls(
-                dataloader,
-                task=task,
-                split="dev",
-                **_kwargs,
-            )
 
-            output_name = f"{config['dataset_name'].lower()}.{task.lower()}.dev.jsonl"
+            # Handle few-shot examples
+            k_shots = [0] + args.k_shots
+            k_shots = [k+1 for k in k_shots]
+            for k in k_shots:
+                _kwargs["parallel_instances"] = k
 
-            if os.path.exists(os.path.join(args.output_dir, output_name)) and not args.overwrite_output_dir:
-                logging.warning(f"Skipping {output_name} because it already exists.")
-                continue
+                sampler = sampler_cls(
+                    dataloader,
+                    task=task,
+                    split="dev",
+                    **_kwargs,
+                )
 
-            with open(os.path.join(args.output_dir, output_name), "w") as _file, tqdm(
-                total=len(dataloader),
-                desc=f"{config['dataset_name']}-{task}-dev",
-                position=tqdm_position,
-            ) as progress:
-                ids = []
-                for elem in sampler:
-                    _file.write(f"{json.dumps(elem, ensure_ascii=False)}\n")
-                    if ids != elem["ids"]:
-                        ids = elem["ids"]
-                        progress.update(len(ids))
+                if k > 1:
+                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.k-{k}.dev.jsonl"
+                else:
+                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.dev.jsonl"
 
-            logging.info(f"Data saved to {os.path.abspath(os.path.join(args.output_dir, output_name))}")
+                if os.path.exists(os.path.join(args.output_dir, output_name)) and not args.overwrite_output_dir:
+                    logging.warning(f"Skipping {output_name} because it already exists.")
+                    continue
+
+                with open(os.path.join(args.output_dir, output_name), "w") as _file, tqdm(
+                    total=len(dataloader),
+                    desc=f"{config['dataset_name']}-{task}-dev",
+                    position=tqdm_position,
+                ) as progress:
+                    ids = []
+                    for elem in sampler:
+                        _file.write(f"{json.dumps(elem, ensure_ascii=False)}\n")
+                        if ids != elem["ids"]:
+                            ids = elem["ids"]
+                            progress.update(len(ids))
+
+                logging.info(f"Data saved to {os.path.abspath(os.path.join(args.output_dir, output_name))}")
 
     if "test_file" in config:
         config["seed"] = 0
         dataloader = dataloader_cls(config["test_file"], **config)
         for task in config["tasks"]:
             _kwargs = {**config, **config["task_configuration"][task]}
-            sampler = sampler_cls(
-                dataloader,
-                task=task,
-                split="test",
-                **_kwargs,
-            )
 
-            output_name = f"{config['dataset_name'].lower()}.{task.lower()}.test.jsonl"
+            # Handle few-shot examples
+            k_shots = [0] + args.k_shots
+            k_shots = [k+1 for k in k_shots]
+            for k in k_shots:
+                _kwargs["parallel_instances"] = k
 
-            if os.path.exists(os.path.join(args.output_dir, output_name)) and not args.overwrite_output_dir:
-                logging.warning(f"Skipping {output_name} because it already exists.")
-                continue
+                sampler = sampler_cls(
+                    dataloader,
+                    task=task,
+                    split="test",
+                    **_kwargs,
+                )
 
-            with open(os.path.join(args.output_dir, output_name), "w") as _file, tqdm(
-                total=len(dataloader),
-                desc=f"{config['dataset_name']}-{task}-test",
-                position=tqdm_position,
-            ) as progress:
-                ids = []
-                for elem in sampler:
-                    _file.write(f"{json.dumps(elem, ensure_ascii=False)}\n")
-                    if ids != elem["ids"]:
-                        ids = elem["ids"]
-                        progress.update(len(ids))
+                if k > 1:
+                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.k-{k}.test.jsonl"
+                else:
+                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.test.jsonl"
 
-            logging.info(f"Data saved to {os.path.abspath(os.path.join(args.output_dir, output_name))}")
+                if os.path.exists(os.path.join(args.output_dir, output_name)) and not args.overwrite_output_dir:
+                    logging.warning(f"Skipping {output_name} because it already exists.")
+                    continue
+
+                with open(os.path.join(args.output_dir, output_name), "w") as _file, tqdm(
+                    total=len(dataloader),
+                    desc=f"{config['dataset_name']}-{task}-test",
+                    position=tqdm_position,
+                ) as progress:
+                    ids = []
+                    for elem in sampler:
+                        _file.write(f"{json.dumps(elem, ensure_ascii=False)}\n")
+                        if ids != elem["ids"]:
+                            ids = elem["ids"]
+                            progress.update(len(ids))
+
+                logging.info(f"Data saved to {os.path.abspath(os.path.join(args.output_dir, output_name))}")
 
 
 def main(args):
@@ -260,6 +280,15 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
         help="Disable paraphrases",
+    )
+
+    parser.add_argument(
+        "--eval_k-shots",
+        nargs="+",
+        type=int,
+        default=[],
+        dest="k_shots",
+        help="Add K-shot evaluations.",
     )
 
     args = parser.parse_args()

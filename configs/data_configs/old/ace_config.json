@@ -13,7 +13,6 @@
     "train_file": "data/ace05/train.sentence.json",
     "dev_file": "data/ace05/dev.sentence.json",
     "test_file": "data/ace05/test.sentence.json",
-    "prompt_template": "templates/prompt.txt",
     "seed": [0, 24, 42],
     "label_noise_prob": [0.15, 0.50, 0.75],
     "task_configuration": {
@@ -22,21 +21,24 @@
             "parallel_instances": 1,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
-            "scorer": "src.tasks.ace.scorer.ACEEntityScorer"
+            "scorer": "src.tasks.ace.scorer.ACEEntityScorer",
+            "prompt_template": "templates/prompt.txt"
         },
         "VER": {
             "group_by": "sentence",
             "parallel_instances": 1,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
-            "scorer": "src.tasks.ace.scorer.ACEValueScorer"
+            "scorer": "src.tasks.ace.scorer.ACEValueScorer",
+            "prompt_template": "templates/prompt.txt"
         },
         "RE": {
             "group_by": "sentence",
             "parallel_instances": 1,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
-            "scorer": "src.tasks.ace.scorer.ACECoarseRelationScorer"
+            "scorer": "src.tasks.ace.scorer.ACECoarseRelationScorer",
+            "prompt_template": "templates/prompt_ace_re.txt"
         },
         "RC": {
             "group_by": "sentence",
@@ -44,14 +46,16 @@
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
             "scorer": "src.tasks.ace.scorer.ACERelationScorer",
-            "ensure_positives_on_train": true
+            "ensure_positives_on_train": true,
+            "prompt_template": "templates/prompt_ace_rc.txt"
         },
         "EE": {
             "group_by": "sentence",
             "parallel_instances": 1,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
-            "scorer": "src.tasks.ace.scorer.ACEEventScorer"
+            "scorer": "src.tasks.ace.scorer.ACEEventScorer",
+            "prompt_template": "templates/prompt.txt"
         },
         "EAE": {
             "group_by": "sentence",
@@ -60,7 +64,8 @@
             "sample_total_guidelines": 5,
             "guideline_dropout": 0.15,
             "scorer": "src.tasks.ace.scorer.ACEEventArgumentScorer",
-            "ensure_positives_on_train": true
+            "ensure_positives_on_train": true,
+            "prompt_template": "templates/prompt_ace_eae.txt"
         }
     }
 }

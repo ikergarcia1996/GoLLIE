@@ -4,13 +4,34 @@ import math
 import random
 import re
 from string import Formatter
-from typing import Any, Dict, List, Set, Tuple, Type, Union
+from typing import Any, Dict, Generator, List, Set, Tuple, Type, Union
 
 import black
 import numpy as np
 from jinja2 import Template
 
 from src.tasks.utils_typing import cast_to
+
+
+SYSTEM_PROMPT = (
+    """You are an expert document analyzer.
+You shall analyze the text input given by the user and extract the relevant information"""
+    """according to the following guidelines defined as Python classes:
+
+```python
+{guidelines}
+```
+"""
+)
+
+
+def batched_cycle(items: List[Any], batch_size: int) -> Generator[List[Any], None, None]:
+    """Return repeated sequence of batched in cycled order."""
+    if len(items) % batch_size > 0:
+        raise ValueError("The item ammount must be a multiple of the batch size.")
+
+    for i in range(len(items) // batch_size):
+        yield items[i * batch_size :] + items[: i * batch_size]
 
 
 class DatasetLoader:
@@ -141,6 +162,7 @@ class Sampler:
         coarse_dropout: float = 0.0,
         do_not_shuffle: bool = False,
         disable_paraphrases: bool = False,
+        use_chat_format: bool = False,
         **kwargs,
     ) -> None:
         self.do_not_shuffle = do_not_shuffle
@@ -153,9 +175,14 @@ class Sampler:
             "test",
         ], f"{split} must be either 'train', 'dev' or 'test'."
         self.split = split
-        if isinstance(parallel_instances, int):
-            parallel_instances = (1, parallel_instances)
-        self.parallel_instances = tuple(parallel_instances)
+
+        self.parallel_instances = parallel_instances
+        if isinstance(self.parallel_instances, tuple) and len(self.parallel_instances) == 1:
+            self.parallel_instances = self.parallel_instances[0]
+
+        if isinstance(self.parallel_instances, int) and self.parallel_instances < 1:
+            self.parallel_instances = 1
+
         self.guideline_dropout = guideline_dropout
         self.coarse_dropout = coarse_dropout
         self.seed = seed
@@ -221,6 +248,8 @@ class Sampler:
 
         self.label_noise_prob = label_noise_prob
         self._class_label_re = re.compile(r"class (\w+)")
+
+        self.use_chat_format = use_chat_format
 
     def _sample(self, instances):
         # _gold refers to specifc gold information that is used in the template (depends on the task)
@@ -293,16 +322,6 @@ class Sampler:
                         _guidelines_dropout.append(random.choice(_guidelines))
                     _guidelines = _guidelines_dropout
 
-                _ann = [ann for inst in instances for ann in inst[self.task_target] if type(ann) in _guidelines]
-                _text = " ".join([inst["text"] for inst in instances]).strip()
-                # This makes the gold information useful for coarse to fine tasks
-                if self.is_coarse_to_fine:
-                    _gold = [cast_to(ann, coarse_type) for ann in _ann]
-
-                # Remove the chances for hallucination because the task is classification
-                if self.is_coarse_to_fine and not len(_ann):
-                    continue
-
                 _guidelines = [inspect.getsource(definition) for definition in _guidelines]
 
                 # Apply definition paraphrases if train
@@ -344,46 +363,138 @@ class Sampler:
                     _guidelines = [self._remove_guidelines_fn(definition) for definition in _guidelines]
                     _guidelines = [self._remove_comments_fn(definition) for definition in _guidelines]
 
-                text = self.template.render(guidelines=_guidelines, text=_text, annotations=_ann, gold=_gold)
-                # Apply label noise (but keem them if we are removing the guidelines)
-                if self.split == "train" and self.label_noise_prob > 0.0 and not self.remove_guidelines:
-                    pretext_idx = text.index("\ntext =")
-                    results_idx = text.index("\nresult =")
-                    _pretext = text[:pretext_idx]
-                    _intext = text[pretext_idx:results_idx]
-                    _postext = text[results_idx:]
-                    class_names = self._class_label_re.findall(_pretext)
-                    random.shuffle(class_names)
-                    i = 1
-                    for name in class_names:
-                        if random.random() <= self.label_noise_prob:
-                            _pretext = _pretext.replace(f"{name}", f"LABEL_{i}")
-                            _postext = _postext.replace(f"{name}(", f"LABEL_{i}(")
-                            i += 1
-                    text = _pretext + _intext + _postext
+                if not self.use_chat_format:
+                    _ann = [ann for inst in instances for ann in inst[self.task_target] if type(ann) in guidelines]
+                    # This makes the gold information useful for coarse to fine tasks
+                    if self.is_coarse_to_fine:
+                        _gold = [cast_to(ann, coarse_type) for ann in _ann]
 
-                yield {
-                    "ids": [inst["id"] for inst in instances],
-                    "task_id": f"{self.dataset_name}_{self.task}",
-                    "scorer_cls": self.scorer_cls,
-                    "labels": black.format_str(_ann.__repr__(), mode=self._black_mode),
-                    "text": black.format_str(text, mode=self._black_mode),
-                    "unlabelled_sentence": _text,
-                }
+                    # Remove the chances for hallucination because the task is classification
+                    if self.is_coarse_to_fine and not len(_ann):
+                        continue
+
+                    _text = " ".join([inst["text"] for inst in instances]).strip()
+                    text = self.template.render(guidelines=_guidelines, text=_text, annotations=_ann, gold=_gold)
+                    # Apply label noise (but keem them if we are removing the guidelines)
+                    if self.split == "train" and self.label_noise_prob > 0.0 and not self.remove_guidelines:
+                        pretext_idx = text.index("\ntext =")
+                        results_idx = text.index("\nresult =")
+                        _pretext = text[:pretext_idx]
+                        _intext = text[pretext_idx:results_idx]
+                        _postext = text[results_idx:]
+                        class_names = self._class_label_re.findall(_pretext)
+                        random.shuffle(class_names)
+                        i = 1
+                        for name in class_names:
+                            if random.random() <= self.label_noise_prob:
+                                _pretext = _pretext.replace(f"{name}", f"LABEL_{i}")
+                                _postext = _postext.replace(f"{name}(", f"LABEL_{i}(")
+                                i += 1
+                        text = _pretext + _intext + _postext
+
+                    yield {
+                        "ids": [inst["id"] for inst in instances],
+                        "task_id": f"{self.dataset_name}_{self.task}",
+                        "scorer_cls": self.scorer_cls,
+                        "labels": black.format_str(_ann.__repr__(), mode=self._black_mode),
+                        "text": black.format_str(text, mode=self._black_mode),
+                        "unlabelled_sentence": _text,
+                    }
+                else:
+                    _ann = [[ann for ann in inst[self.task_target] if type(ann) in guidelines] for inst in instances]
+
+                    _gold = (
+                        [[cast_to(ann, coarse_type) for ann in inst] for inst in _ann]
+                        if self.is_coarse_to_fine
+                        else _ann.copy()
+                    )
+
+                    # Remove the chances for hallucination because the task is classification
+                    if self.is_coarse_to_fine and not len(_ann):
+                        continue
+
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": SYSTEM_PROMPT.format(
+                                guidelines=black.format_str(
+                                    eval("".join([_guideline.__repr__() for _guideline in _guidelines])),
+                                    mode=self._black_mode,
+                                )
+                            ),
+                        }
+                    ]
+                    for inst, ann, gold in zip(instances, _ann, _gold):
+                        messages.extend(
+                            [
+                                {"role": "user", "content": self.template.render(text=inst["text"], gold=gold)},
+                                {
+                                    "role": "assistant",
+                                    "content": (
+                                        "```python\n"
+                                        + black.format_str(ann.__repr__(), mode=self._black_mode)
+                                        + "\n```"
+                                    ),
+                                },
+                            ]
+                        )
+
+                    if self.split == "train" and self.label_noise_prob > 0.0 and not self.remove_guidelines:
+                        class_names = self._class_label_re.findall(messages[0]["content"])
+                        i = 1
+                        for name in class_names:
+                            if random.random() <= self.label_noise_prob:
+                                for j in enumerate(len(messages)):
+                                    messages[j]["content"] = messages[j]["content"].replace(f"{name}", f"LABEL_{i}")
+
+                    if self.split == "train":
+                        yield {
+                            "ids": [inst["id"] for inst in instances],
+                            "task_id": f"{self.dataset_name}_{self.task}",
+                            "scorer_cls": self.scorer_cls,
+                            "labels": (
+                                messages[-1]["content"].lstrip('"```python\n"').rstrip('"\n```"')
+                            ),  # Only evaluate on the last item
+                            "conversation": messages,
+                        }
+                    else:
+                        for _messages, _instances in zip(
+                            batched_cycle(messages[1:], batch_size=2), batched_cycle(instances, batch_size=1)
+                        ):
+                            _messages = [messages[0]] + _messages
+                            yield {
+                                "ids": [inst["id"] for inst in _instances],
+                                "task_id": f"{self.dataset_name}_{self.task}",
+                                "scorer_cls": self.scorer_cls,
+                                "labels": (
+                                    _messages[-1]["content"].lstrip('"```python\n"').rstrip('"\n```"')
+                                ),  # Only evaluate on the last item
+                                "conversation": _messages,
+                            }
 
     def __iter__(self):
         random.seed(self.seed)
         np.random.seed(self.seed)
         instances = []
-        total_inst = random.randint(*self.parallel_instances)
+        if isinstance(self.parallel_instances, tuple):
+            total_inst = random.randint(*self.parallel_instances)
+        else:
+            total_inst = self.parallel_instances
+
         prev_id = None
         for elem in self.loader:
             # Prevent mixing sentences from different documents. TODO: generalize
-            if (len(instances) == total_inst) or (prev_id is not None and elem["doc_id"] != prev_id):
+            if (len(instances) == total_inst) or (
+                prev_id is not None and elem["doc_id"] != prev_id and not self.use_chat_format
+            ):
                 for samp in self._sample(instances):
                     yield samp
                 instances = []
-                total_inst = random.randint(*self.parallel_instances)
+
+                if isinstance(self.parallel_instances, tuple):
+                    total_inst = random.randint(*self.parallel_instances)
+                else:
+                    total_inst = self.parallel_instances
 
             instances.append(elem)
             prev_id = elem["doc_id"]

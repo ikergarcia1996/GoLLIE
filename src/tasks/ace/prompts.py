@@ -458,7 +458,7 @@ COARSE_EVENT_DEFINITIONS: List[Type] = [
 
 @dataclass
 class BeBorn(LifeEvent):
-    """A BeBorn Event occurs whenever a Person Entity is given birth to."""
+    """{ace_beborn}"""
 
     mention: str  # The text span that most clearly expresses (triggers) the event
     person: List[str]  # The person who is born

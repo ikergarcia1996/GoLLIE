@@ -8,7 +8,7 @@ class TestDataLoaders(unittest.TestCase):
     def test_ACE(self):
         from src.tasks.ace.data_loader import ACEDatasetLoader, ACESampler
 
-        with open("configs/data_configs/ace_config.json") as f:
+        with open("configs/data_configs/old/ace_config.json") as f:
             config = json.load(f)
         if isinstance(config["seed"], list):
             config["seed"] = 0
@@ -24,7 +24,7 @@ class TestDataLoaders(unittest.TestCase):
     def test_ACE_end2end(self):
         from src.tasks.ace.data_loader import ACEDatasetLoader, ACESampler
 
-        with open("configs/data_configs/ace_config.json") as f:
+        with open("configs/data_configs/old/ace_config_end2end.json") as f:
             config = json.load(f)
         if isinstance(config["seed"], list):
             config["seed"] = 0
@@ -35,15 +35,44 @@ class TestDataLoaders(unittest.TestCase):
 
         dataloader = ACEDatasetLoader("data/ace05/english.sentence.json", group_by="sentence")
 
-        _ = next(iter(ACESampler(dataloader, task="EAE", **config, **config["task_configuration"]["EAE"])))
+        instance = next(iter(ACESampler(dataloader, task="EAE", **config, **config["task_configuration"]["EAE"])))
 
-        self.assertEqual(len(_["text"]), 16917)
+        self.assertEqual(len(instance["text"]), 16917)
+
+    @unittest.skipIf(not os.path.exists("data/ace05/english.sentence.json"), "No ACE data available")
+    def test_ACE_chat(self):
+        from src.tasks.ace.data_loader import ACEDatasetLoader, ACESampler
+
+        with open("configs/data_configs/chat/ace_config_end2end.json") as f:
+            config = json.load(f)
+        if isinstance(config["seed"], list):
+            config["seed"] = 0
+            config["label_noise_prob"] = 0.0
+
+        config["task_configuration"]["NER"]["is_end_to_end"] = True
+        config["task_configuration"]["NER"]["sample_total_guidelines"] = -1
+        config["task_configuration"]["NER"]["parallel_instances"] = 1
+        config["task_configuration"]["NER"]["prompt_template"] = "templates/user_prompt_ace.j2"
+        config["use_chat_format"] = True
+
+        dataloader = ACEDatasetLoader("data/ace05/dev.sentence.json", group_by="sentence")
+
+        iterator = iter(
+            ACESampler(dataloader, split="dev", task="NER", **config, **config["task_configuration"]["EAE"])
+        )
+        instance = next(iterator)
+        instance = next(iterator)
+
+        self.assertEqual(
+            instance["labels"], instance["conversation"][-1]["content"].lstrip("```python\n").rstrip("\n```")
+        )
+        self.assertGreater(len(instance["conversation"]), 1)
 
     @unittest.skipIf(not os.path.exists("data/casie/data.jsonl"), "No CASIE data available")
     def test_CASIE(self):
         from src.tasks.casie.data_loader import CASIEDatasetLoader, CASIESampler
 
-        with open("configs/data_configs/casie_config.json") as f:
+        with open("configs/data_configs/old/casie_config.json") as f:
             config = json.load(f)
 
         dataloader = CASIEDatasetLoader("data/casie/data.dev.jsonl")
@@ -58,7 +87,7 @@ class TestDataLoaders(unittest.TestCase):
     def test_WikiEvents(self):
         from src.tasks.wikievents.data_loader import WikiEventsDatasetLoader, WikiEventsSampler
 
-        with open("configs/data_configs/wikievents_config.json") as f:
+        with open("configs/data_configs/old/wikievents_config.json") as f:
             config = json.load(f)
         if isinstance(config["seed"], list):
             config["seed"] = 0
@@ -74,7 +103,7 @@ class TestDataLoaders(unittest.TestCase):
     def test_RAMS(self):
         from src.tasks.rams.data_loader import RAMSDatasetLoader, RAMSSampler
 
-        with open("configs/data_configs/rams_config.json") as f:
+        with open("configs/data_configs/old/rams_config.json") as f:
             config = json.load(f)
         if isinstance(config["seed"], list):
             config["seed"] = 0
@@ -90,7 +119,7 @@ class TestDataLoaders(unittest.TestCase):
     def test_TACRED(self):
         from src.tasks.tacred.data_loader import TACREDDatasetLoader, TACREDSampler
 
-        with open("configs/data_configs/tacred_config.json") as f:
+        with open("configs/data_configs/old/tacred_config.json") as f:
             config = json.load(f)
         if isinstance(config["seed"], list):
             config["seed"] = 0
@@ -105,7 +134,7 @@ class TestDataLoaders(unittest.TestCase):
         from src.tasks.conll03.data_loader import CoNLL03Sampler, CoNLLDatasetLoader
         from src.tasks.conll03.prompts import Miscellaneous, Organization, Person
 
-        with open("configs/data_configs/conll03_config.json") as f:
+        with open("configs/data_configs/old/conll03_config.json") as f:
             config = json.load(f)
         if isinstance(config["seed"], list):
             config["seed"] = 0

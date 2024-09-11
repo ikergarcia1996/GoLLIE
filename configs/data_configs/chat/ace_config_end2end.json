@@ -3,9 +3,7 @@
     "tasks": [
         "NER",
         "VER",
-        "RE",
         "RC",
-        "EE",
         "EAE"
     ],
     "dataloader_cls": "src.tasks.ace.data_loader.ACEDatasetLoader",
@@ -13,43 +11,47 @@
     "train_file": "data/ace05/train.sentence.json",
     "dev_file": "data/ace05/dev.sentence.json",
     "test_file": "data/ace05/test.sentence.json",
-    "prompt_template": "templates/prompt.txt",
+    "use_chat_format": true,
     "seed": [0, 24, 42],
     "label_noise_prob": [0.15, 0.50, 0.75],
     "task_configuration": {
         "NER": {
             "group_by": "sentence",
-            "parallel_instances": 1,
+            "parallel_instances": 5,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
-            "scorer": "src.tasks.ace.scorer.ACEEntityScorer"
+            "scorer": "src.tasks.ace.scorer.ACEEntityScorer",
+            "prompt_template": "templates/user_prompt_ace.j2"
         },
         "VER": {
             "group_by": "sentence",
-            "parallel_instances": 1,
+            "parallel_instances": 5,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
-            "scorer": "src.tasks.ace.scorer.ACEValueScorer"
+            "scorer": "src.tasks.ace.scorer.ACEValueScorer",
+            "prompt_template": "templates/user_prompt_ace.j2"
         },
         "RC": {
             "group_by": "sentence",
-            "parallel_instances": 1,
+            "parallel_instances": 5,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
             "scorer": "src.tasks.ace.scorer.ACERelationScorer",
             "ensure_positives_on_train": true,
             "is_end_to_end": true,
-            "sample_total_guidelines": -1
+            "sample_total_guidelines": -1,
+            "prompt_template": "templates/user_prompt_ace_re.j2"
         },
         "EAE": {
             "group_by": "sentence",
-            "parallel_instances": 1,
+            "parallel_instances": 5,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
             "scorer": "src.tasks.ace.scorer.ACEEventArgumentScorer",
             "ensure_positives_on_train": true,
             "is_end_to_end": true,
-            "sample_total_guidelines": -1
+            "sample_total_guidelines": -1,
+            "prompt_template": "templates/user_prompt_ace.j2"
         }
     }
 }
