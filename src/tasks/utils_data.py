@@ -444,8 +444,9 @@ class Sampler:
                         i = 1
                         for name in class_names:
                             if random.random() <= self.label_noise_prob:
-                                for j in enumerate(len(messages)):
+                                for j in range(len(messages)):
                                     messages[j]["content"] = messages[j]["content"].replace(f"{name}", f"LABEL_{i}")
+                                i += 1
 
                     if self.split == "train":
                         yield {
