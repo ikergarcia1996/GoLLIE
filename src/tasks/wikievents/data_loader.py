@@ -588,7 +588,7 @@ class WikiEventsSampler(Sampler):
             COARSE_TO_FINE = None
             FINE_TO_COARSE = None
 
-        kwargs.pop("prompt_template")
+        # kwargs.pop("prompt_template")
 
         super().__init__(
             dataset_loader=dataset_loader,
@@ -598,7 +598,7 @@ class WikiEventsSampler(Sampler):
             max_guidelines=max_guidelines,
             guideline_dropout=guideline_dropout,
             seed=seed,
-            prompt_template=task_template,
+            # prompt_template=task_template,
             ensure_positives_on_train=ensure_positives_on_train,
             sample_only_gold_guidelines=sample_only_gold_guidelines,
             dataset_name=dataset_name,

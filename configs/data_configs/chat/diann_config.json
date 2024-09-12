@@ -1,0 +1,22 @@
+{
+    "dataset_name": "DIANN",
+    "tasks": ["NER"],
+    "dataloader_cls": "src.tasks.diann.data_loader.DiannDatasetLoader",
+    "sampler_cls": "src.tasks.diann.data_loader.DiannSampler",
+    "train_file": "data/diann/en-diann-train.tsv",
+    "dev_file": "data/diann/en-diann-dev.tsv",
+    "test_file": "data/diann/en-diann-test.tsv",
+    "prompt_template": "templates/user_prompt.j2",
+    "parallel_instances": 15,
+    "use_chat_format": true,
+    "seed": [0, 24, 42],
+    "label_noise_prob": [0.15, 0.50, 0.75],
+    "task_configuration": {
+        "NER": {
+            "max_guidelines": -1,
+            "guideline_dropout": 0.0,
+            "scorer": "src.tasks.diann.scorer.DiannDiseaseEntityScorer",
+            "paraphrase_train": true
+        }
+    }
+}

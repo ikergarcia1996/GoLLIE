@@ -1,0 +1,9 @@
+Extract the relations from the following text:
+```python
+text = {{ text.__repr__() }}
+```
+
+Consider only the following event triggers:
+{%- for ann in gold %}
+    - "{{ann.mention}}" triggers a {{ann.__class__.__name__}}.{{ann.subtype}} event.
+{%- endfor %}

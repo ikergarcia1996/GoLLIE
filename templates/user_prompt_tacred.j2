@@ -1,0 +1,9 @@
+Extract the relations from the following text:
+```python
+text = {{ text.__repr__() }}
+```
+
+Consider only the following entity queries:
+{%- for ann in gold %}
+    - "{{ann.query}}": {{ann.__class__.__name__}}
+{%- endfor %}

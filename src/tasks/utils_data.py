@@ -15,7 +15,7 @@ from src.tasks.utils_typing import cast_to
 
 SYSTEM_PROMPT = (
     """You are an expert document analyzer.
-You shall analyze the text input given by the user and extract the relevant information"""
+You shall analyze the text input given by the user and extract the relevant information """
     """according to the following guidelines defined as Python classes:
 
 ```python

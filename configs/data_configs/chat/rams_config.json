@@ -1,0 +1,25 @@
+{
+    "dataset_name": "RAMS",
+    "tasks": [
+        "EAE"
+    ],
+    "dataloader_cls": "src.tasks.rams.data_loader.RAMSDatasetLoader",
+    "sampler_cls": "src.tasks.rams.data_loader.RAMSSampler",
+    "train_file": "data/rams/train.jsonlines",
+    "dev_file": "data/rams/dev.jsonlines",
+    "test_file": "data/rams/test.jsonlines",
+    "prompt_template": "templates/user_prompt_rams.j2",
+    "parallel_instances": 15,
+    "use_chat_format": true,
+    "seed": [0, 24, 42],
+    "label_noise_prob": [0.15, 0.50, 0.75],
+    "task_configuration": {
+        "EAE": {
+            "max_guidelines": -1,
+            "guideline_dropout": 0,
+            "scorer": "src.tasks.rams.scorer.RAMSEventScorer",
+            "sample_only_gold_guidelines": true,
+            "ensure_positives_on_train": true
+        }
+    }
+}

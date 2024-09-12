@@ -14,26 +14,24 @@
     "use_chat_format": true,
     "seed": [0, 24, 42],
     "label_noise_prob": [0.15, 0.50, 0.75],
+    "parallel_instances": 15,
     "task_configuration": {
         "NER": {
             "group_by": "sentence",
-            "parallel_instances": 5,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
             "scorer": "src.tasks.ace.scorer.ACEEntityScorer",
-            "prompt_template": "templates/user_prompt_ace.j2"
+            "prompt_template": "templates/user_prompt.j2"
         },
         "VER": {
             "group_by": "sentence",
-            "parallel_instances": 5,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
             "scorer": "src.tasks.ace.scorer.ACEValueScorer",
-            "prompt_template": "templates/user_prompt_ace.j2"
+            "prompt_template": "templates/user_prompt.j2"
         },
         "RC": {
             "group_by": "sentence",
-            "parallel_instances": 5,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
             "scorer": "src.tasks.ace.scorer.ACERelationScorer",
@@ -44,14 +42,13 @@
         },
         "EAE": {
             "group_by": "sentence",
-            "parallel_instances": 5,
             "max_guidelines": -1,
             "guideline_dropout": 0.15,
             "scorer": "src.tasks.ace.scorer.ACEEventArgumentScorer",
             "ensure_positives_on_train": true,
             "is_end_to_end": true,
             "sample_total_guidelines": -1,
-            "prompt_template": "templates/user_prompt_ace.j2"
+            "prompt_template": "templates/user_prompt.j2"
         }
     }
 }

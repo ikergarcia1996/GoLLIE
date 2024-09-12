@@ -1,0 +1,22 @@
+{
+    "dataset_name": "BroadTwitter",
+    "tasks": ["NER"],
+    "dataloader_cls": "src.tasks.broadtwitter.data_loader.BroadTwitterDatasetLoader",
+    "sampler_cls": "src.tasks.broadtwitter.data_loader.BroadTwitterSampler",
+    "train_file": "train",
+    "dev_file": "validation",
+    "test_file": "test",
+    "seed": [0, 24, 42],
+    "label_noise_prob": [0.15, 0.50, 0.75],
+    "prompt_template": "templates/user_prompt.j2",
+    "parallel_instances": 15,
+    "use_chat_format": true,
+    "task_configuration": {
+        "NER": {
+            "max_guidelines": -1,
+            "guideline_dropout": 0.15,
+            "scorer": "src.tasks.broadtwitter.scorer.BroadTwitterEntityScorer",
+            "paraphrase_train": true
+        }
+    }
+}

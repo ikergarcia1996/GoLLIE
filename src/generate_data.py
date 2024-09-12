@@ -74,7 +74,7 @@ def multicpu_generator(args, tqdm_position, config):
 
             # Handle few-shot examples
             k_shots = [0] + args.k_shots
-            k_shots = [k+1 for k in k_shots]
+            k_shots = [k + 1 for k in k_shots]
             for k in k_shots:
                 _kwargs["parallel_instances"] = k
 
@@ -86,7 +86,7 @@ def multicpu_generator(args, tqdm_position, config):
                 )
 
                 if k > 1:
-                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.k-{k}.dev.jsonl"
+                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.k-{k-1}.dev.jsonl"
                 else:
                     output_name = f"{config['dataset_name'].lower()}.{task.lower()}.dev.jsonl"
 
@@ -116,7 +116,7 @@ def multicpu_generator(args, tqdm_position, config):
 
             # Handle few-shot examples
             k_shots = [0] + args.k_shots
-            k_shots = [k+1 for k in k_shots]
+            k_shots = [k + 1 for k in k_shots]
             for k in k_shots:
                 _kwargs["parallel_instances"] = k
 
@@ -128,7 +128,7 @@ def multicpu_generator(args, tqdm_position, config):
                 )
 
                 if k > 1:
-                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.k-{k}.test.jsonl"
+                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.k-{k-1}.test.jsonl"
                 else:
                     output_name = f"{config['dataset_name'].lower()}.{task.lower()}.test.jsonl"
 
