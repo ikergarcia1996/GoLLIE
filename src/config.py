@@ -279,3 +279,7 @@ class DataTrainingArguments:
             )
         },
     )
+
+    use_chat_format: bool = field(
+        default=False, metadata={"help": "Whether or not use a chat template to train the model."}
+    )

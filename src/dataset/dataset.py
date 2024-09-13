@@ -38,8 +38,220 @@ def batch(iterable: Sized, n=1) -> Iterator:
         yield iterable[ndx : min(ndx + p, l)]
 
 
-def prepare_data(
+def prepare_example(
     example: str,
+    tokenizer: PreTrainedTokenizerBase,
+    inference: bool = False,
+    prompt_until: str = "result",
+    max_length: int = 2048,
+    prompt_loss_weight: float = 0.05,
+) -> BatchEncoding:
+    if inference:
+        if prompt_until == "all":
+            prompt = ""
+        elif prompt_until == "result":
+            prompt = example.split("result =")[0] + "result ="
+        elif prompt_until == "text":
+            prompt = example.split("text =")[0] + "text ="
+        else:
+            raise ValueError(f"Invalid prompt_until value: {prompt_until}. Valid values are 'all', 'result', 'text'")
+
+        model_inputs = tokenizer(
+            text=prompt,
+            max_length=max_length,
+            truncation=True,
+            padding=False,
+            return_tensors=None,
+            add_special_tokens=True,
+        )
+
+        # Remove the last token if it is an eos token
+        if model_inputs["input_ids"][-1] == tokenizer.eos_token_id:
+            model_inputs["input_ids"] = model_inputs["input_ids"][:-1]
+            model_inputs["attention_mask"] = model_inputs["attention_mask"][:-1]
+
+    else:
+        model_inputs = tokenizer(
+            text=example,
+            max_length=max_length,
+            truncation=True,
+            padding=False,
+            return_tensors=None,
+            add_special_tokens=True,
+        )
+
+        # Make sure the `eos_token_id` is added at the end
+        # This bug is reported at https://github.com/huggingface/transformers/issues/22794
+        if model_inputs["input_ids"][-1] != tokenizer.eos_token_id:
+            model_inputs["input_ids"].append(tokenizer.eos_token_id)
+            model_inputs["attention_mask"].append(1)
+
+        model_inputs["labels"] = model_inputs["input_ids"].copy()
+
+        # Find the prompt length
+
+        if prompt_until == "all":
+            loss_weight_mask = np.ones(len(model_inputs["labels"]), dtype=np.float32)
+        else:
+            if prompt_until == "result":
+                prompt = example.split("result =", maxsplit=1)[0] + "result ="
+            elif prompt_until == "text":
+                prompt = example.split("text =", maxsplit=1)[0] + "text ="
+            else:
+                raise ValueError(
+                    f"Invalid prompt_until value: {prompt_until}. Valid values are 'all', 'result', 'text'"
+                )
+
+            prompt = tokenizer(
+                text=prompt,
+                max_length=max_length,
+                truncation=True,
+                padding=False,
+                return_tensors=None,
+                add_special_tokens=True,
+            )["input_ids"]
+
+            # Remove the last token if it is an eos token
+            if prompt[-1] == tokenizer.eos_token_id:
+                prompt = prompt[:-1]
+
+            if len(prompt) > len(model_inputs["labels"]):
+                raise ValueError(
+                    f"Prompt is longer than the labels, something went wrong. Prompt: {prompt}, labels:"
+                    f" {model_inputs['labels']}"
+                )
+
+            # Create the weight mask
+            loss_weight_mask = np.ones(len(model_inputs["labels"]), dtype=np.float32)
+
+            # The sum of the loss of the prompt tokens should be equal
+            # to 'prompt_loss_weight' percent of the total loss
+            len_prompt = len(prompt)
+            len_result = len(model_inputs["labels"]) - len_prompt
+            prompt_token_weight = len_result * prompt_loss_weight  # 'prompt_loss_weight' percent of the total loss
+            try:
+                prompt_token_weight = prompt_token_weight * (
+                    len_result / (len_result * (1 - prompt_loss_weight))
+                )  # Scale so result tokens can have 1.0 weight
+                prompt_token_weight = prompt_token_weight / len_prompt  # Divide by the number of prompt tokens
+            except ZeroDivisionError:
+                logging.warning(
+                    "Found division by zero in prompt token weight calculation. You might have an empty prompt,"
+                    f" empty result, or both. Example with error: {example}. Setting prompt token weight to 0.0."
+                )
+                prompt_token_weight = 0.0
+
+            for i in range(len(prompt)):
+                loss_weight_mask[i] = prompt_token_weight
+
+        model_inputs["loss_weight_mask"] = loss_weight_mask
+
+    return model_inputs
+
+
+def prepare_chat_example(
+    conversation: List[Dict[str, str]],
+    tokenizer: PreTrainedTokenizerBase,
+    max_length: int = 2048,
+    inference: bool = False,
+    prompt_until: str = "result",
+    prompt_loss_weight: float = 0.05,
+) -> BatchEncoding:
+    formatted_chat = tokenizer.apply_chat_template(conversation=conversation, tokenize=False)
+
+    if inference:
+        # Split the formatted chat into prompt and completion
+        assistant_messages = [msg for msg in conversation if msg["role"] == "assistant"]
+        last_assistant_message = assistant_messages[-1]["content"]
+        prompt = formatted_chat.rsplit(last_assistant_message, 1)[0]
+
+        # Tokenize prompts and completions
+        model_inputs = tokenizer(
+            prompt,
+            truncation=True,
+            max_length=max_length,
+            padding=False,
+            return_tensors=None,
+            add_special_tokens=False,
+        )
+
+        # Remove the last token if it is an eos token
+        if model_inputs["input_ids"][-1] == tokenizer.eos_token_id:
+            model_inputs["input_ids"] = model_inputs["input_ids"][:-1]
+            model_inputs["attention_mask"] = model_inputs["attention_mask"][:-1]
+
+    else:
+        model_inputs = tokenizer(
+            formatted_chat,
+            truncation=True,
+            max_length=max_length,
+            padding=False,
+            return_tensors=None,
+            add_special_tokens=False,
+        )
+
+        model_inputs["labels"] = model_inputs["input_ids"].copy()
+
+        # Compute the loss over the whole sequence
+        if prompt_until == "all":
+            loss_weight_mask = np.ones_like(model_inputs["labels"], dtype=np.float32)
+        else:
+            # Identify the index of assistant messages
+            assistant_msgs = [msg["role"] == "assistant" for msg in conversation]
+
+            # Split the conversation by end of text (this should work for most models)
+            splitted_text = formatted_chat.split(tokenizer.eos_token)
+            # Add back the eos_token and remove the empty last message
+            splitted_text = [text + tokenizer.eos_token for text in splitted_text if text]
+
+            assert len(splitted_text) == len(conversation)
+
+            tokenized_splitted_text = tokenizer(
+                splitted_text,
+                add_special_tokens=False,
+                padding=False,
+                return_tensors=None,
+            )
+
+            assistant_tokens = np.concatenate(
+                [
+                    [1] * len(ids) if assistant else [0] * len(ids)
+                    for ids, assistant in zip(tokenized_splitted_text.input_ids, assistant_msgs)
+                ]
+            ).astype(float)
+            prompt_tokens = np.concatenate(
+                [
+                    [1] * len(ids) if not assistant else [0] * len(ids)
+                    for ids, assistant in zip(tokenized_splitted_text.input_ids, assistant_msgs)
+                ]
+            ).astype(float)
+
+            # The sum of the loss of the prompt tokens should be equal
+            # to 'prompt_loss_weight' percent of the total loss
+            len_prompt = np.sum(prompt_tokens)  # len(prompt)
+            len_result = len(model_inputs["labels"]) - len_prompt
+            prompt_token_weight = len_result * prompt_loss_weight  # 'prompt_loss_weight' percent of the total loss
+            try:
+                prompt_token_weight = prompt_token_weight * (
+                    len_result / (len_result * (1 - prompt_loss_weight))
+                )  # Scale so result tokens can have 1.0 weight
+                prompt_token_weight = prompt_token_weight / len_prompt  # Divide by the number of prompt tokens
+            except ZeroDivisionError:
+                logging.warning(
+                    "Found division by zero in prompt token weight calculation. You might have an empty prompt,"
+                    f" empty result, or both. Example with error: {conversation}. Setting prompt token weight to 0.0."
+                )
+                prompt_token_weight = 0.0
+
+            loss_weight_mask = prompt_token_weight + assistant_tokens
+
+        model_inputs["loss_weight_mask"] = loss_weight_mask
+
+    return model_inputs
+
+
+def prepare_data(
+    example: Union[str, List[Dict[str, str]]],
     tokenizer: PreTrainedTokenizerBase,
     is_encoder_decoder: bool = False,
     max_length: int = 2048,
@@ -73,6 +285,8 @@ def prepare_data(
         `BatchEncoding`: `BatchEncoding` with the prepared data.
     """
 
+    use_chat_format = not isinstance(example, str)
+
     if is_encoder_decoder:
         if prompt_until == "all":
             raise ValueError(
@@ -105,106 +319,23 @@ def prepare_data(
             model_inputs["loss_weight_mask"] = np.ones(len(model_inputs["labels"]), dtype=np.float32)
 
     else:
-        if inference:
-            if prompt_until == "all":
-                prompt = ""
-            elif prompt_until == "result":
-                prompt = example.split("result =")[0] + "result ="
-            elif prompt_until == "text":
-                prompt = example.split("text =")[0] + "text ="
-            else:
-                raise ValueError(
-                    f"Invalid prompt_until value: {prompt_until}. Valid values are 'all', 'result', 'text'"
-                )
-            model_inputs = tokenizer(
-                text=prompt,
+        if not use_chat_format:
+            model_inputs = prepare_example(
+                example=example,
+                tokenizer=tokenizer,
+                inference=inference,
+                prompt_until=prompt_until,
                 max_length=max_length,
-                truncation=True,
-                padding=False,
-                return_tensors=None,
-                add_special_tokens=True,
+                prompt_loss_weight=prompt_loss_weight,
             )
-
-            # Remove the last token if it is an eos token
-            if model_inputs["input_ids"][-1] == tokenizer.eos_token_id:
-                model_inputs["input_ids"] = model_inputs["input_ids"][:-1]
-                model_inputs["attention_mask"] = model_inputs["attention_mask"][:-1]
-
         else:
-            model_inputs = tokenizer(
-                text=example,
+            model_inputs = prepare_chat_example(
+                conversation=example,
+                tokenizer=tokenizer,
+                inference=inference,
                 max_length=max_length,
-                truncation=True,
-                padding=False,
-                return_tensors=None,
-                add_special_tokens=True,
+                prompt_loss_weight=prompt_loss_weight,
             )
-
-            # Make sure the `eos_token_id` is added at the end
-            # This bug is reported at https://github.com/huggingface/transformers/issues/22794
-            if model_inputs["input_ids"][-1] != tokenizer.eos_token_id:
-                model_inputs["input_ids"].append(tokenizer.eos_token_id)
-                model_inputs["attention_mask"].append(1)
-
-            model_inputs["labels"] = model_inputs["input_ids"].copy()
-
-            # Find the prompt length
-
-            if prompt_until == "all":
-                loss_weight_mask = np.ones(len(model_inputs["labels"]), dtype=np.float32)
-            else:
-                if prompt_until == "result":
-                    prompt = example.split("result =", maxsplit=1)[0] + "result ="
-                elif prompt_until == "text":
-                    prompt = example.split("text =", maxsplit=1)[0] + "text ="
-                else:
-                    raise ValueError(
-                        f"Invalid prompt_until value: {prompt_until}. Valid values are 'all', 'result', 'text'"
-                    )
-
-                prompt = tokenizer(
-                    text=prompt,
-                    max_length=max_length,
-                    truncation=True,
-                    padding=False,
-                    return_tensors=None,
-                    add_special_tokens=True,
-                )["input_ids"]
-
-                # Remove the last token if it is an eos token
-                if prompt[-1] == tokenizer.eos_token_id:
-                    prompt = prompt[:-1]
-
-                if len(prompt) > len(model_inputs["labels"]):
-                    raise ValueError(
-                        f"Prompt is longer than the labels, something went wrong. Prompt: {prompt}, labels:"
-                        f" {model_inputs['labels']}"
-                    )
-
-                # Create the weight mask
-                loss_weight_mask = np.ones(len(model_inputs["labels"]), dtype=np.float32)
-
-                # The sum of the loss of the prompt tokens should be equal
-                # to 'prompt_loss_weight' percent of the total loss
-                len_prompt = len(prompt)
-                len_result = len(model_inputs["labels"]) - len_prompt
-                prompt_token_weight = len_result * prompt_loss_weight  # 'prompt_loss_weight' percent of the total loss
-                try:
-                    prompt_token_weight = prompt_token_weight * (
-                        len_result / (len_result * (1 - prompt_loss_weight))
-                    )  # Scale so result tokens can have 1.0 weight
-                    prompt_token_weight = prompt_token_weight / len_prompt  # Divide by the number of prompt tokens
-                except ZeroDivisionError:
-                    logging.warning(
-                        "Found division by zero in prompt token weight calculation. You might have an empty prompt,"
-                        f" empty result, or both. Example with error: {example}. Setting prompt token weight to 0.0."
-                    )
-                    prompt_token_weight = 0.0
-
-                for i in range(len(prompt)):
-                    loss_weight_mask[i] = prompt_token_weight
-
-            model_inputs["loss_weight_mask"] = loss_weight_mask
 
     if "token_type_ids" in model_inputs:
         # LLaMa tokenizer adds token type ids, but we don't need them
@@ -221,7 +352,7 @@ def batch_tokenization(
     inference: bool,
     prompt_loss_weight: float,
     prompt_until: str,
-    examples: List[str],
+    examples: Union[List[str], List[List[Dict[str, str]]]],
     process_no: int,
 ) -> List[BatchEncoding]:
     """
@@ -327,6 +458,8 @@ class CollieDataset(Dataset):
             The maximum number of examples to load. Defaults to `None`. If `None` all
             examples will be loaded. If `max_examples` is smaller is set we will randomly
             sample `max_examples` examples from the dataset.
+        use_chat_format (`bool`, optional):
+            Whether or not to use the chat format for the input-output. Defaults to `False`.
     """
 
     def __init__(
@@ -340,6 +473,7 @@ class CollieDataset(Dataset):
         prompt_until: str = "result",
         num_workers: int = min(os.cpu_count(), 16),
         max_examples: Optional[int] = None,
+        use_chat_format: bool = False,
     ):
         self.is_encoder_decoder = is_encoder_decoder
         self.max_length = max_length
@@ -388,6 +522,7 @@ class CollieDataset(Dataset):
                         dataset_path=dataset,
                         num_workers=num_workers,
                         tokenizer=tokenizer,
+                        use_chat_format=use_chat_format,
                     )
 
                     self.dataset_keys.append(int(epoch))
@@ -417,6 +552,7 @@ class CollieDataset(Dataset):
                 dataset_path=dataset_path,
                 num_workers=num_workers,
                 tokenizer=tokenizer,
+                use_chat_format=use_chat_format,
             )
             self.dataset_keys.append(0)
             self.current_dataset_key = self.dataset_keys[0]
@@ -425,9 +561,10 @@ class CollieDataset(Dataset):
 
     def compute_tokenized_examples(
         self,
-        dataset_path,
-        num_workers,
-        tokenizer,
+        dataset_path: str,
+        num_workers: int,
+        tokenizer: PreTrainedTokenizerBase,
+        use_chat_format: bool = False,
     ) -> List[BatchEncoding]:
         """
         Compute the tokenized examples.
@@ -449,7 +586,10 @@ class CollieDataset(Dataset):
         with open(dataset_path, "r", encoding="utf8") as f:
             examples = f.readlines()
 
-        examples = [json.loads(example.strip())["text"] for example in examples]
+        examples = [
+            json.loads(example.strip())["text"] if not use_chat_format else json.loads(example.strip())["conversation"]
+            for example in examples
+        ]
 
         if self.max_examples is not None and self.max_examples < len(examples):
             examples = random.sample(examples, self.max_examples)

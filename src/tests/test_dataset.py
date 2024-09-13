@@ -545,6 +545,37 @@ class TestCollieDataset(unittest.TestCase):
         self.assertTrue(len(model_input) == 2048)
     """
 
+    def test_chat_dataset(self):
+        from transformers import AutoTokenizer
+
+        conversation = [
+            {"role": "system", "content": "You are a system jeje."},
+            {"role": "user", "content": "Default text."},
+            {"role": "assistant", "content": "WTF."},
+            {"role": "user", "content": "Another default text."},
+            {"role": "assistant", "content": "WTF."},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            with open(os.path.join(tmpdirname, "tmp.ee.train.jsonl"), "w", encoding="utf8") as f:
+                print(json.dumps({"conversation": conversation}, ensure_ascii=False), file=f)
+
+            tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3.1-8B-Instruct")
+
+            chat_dataset = CollieDataset(
+                tokenizer=tokenizer,
+                dataset_path=os.path.join(tmpdirname, "tmp.ee.train.jsonl"),
+                is_encoder_decoder=False,
+                max_length=2048,
+                inference=False,
+                prompt_loss_weight=0.0,
+                use_chat_format=True,
+            )
+
+            import rich
+
+            rich.print(chat_dataset[0])
+
     def test_dataloader(self):
         from torch.utils.data import DataLoader
 

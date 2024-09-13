@@ -91,6 +91,7 @@ def train_collie(
             prompt_loss_weight=data_args.prompt_loss_weight,
             prompt_until=data_args.prompt_until,
             max_examples=data_args.max_examples_per_task_train,
+            use_chat_format=data_args.use_chat_format,
         )
         training_datasets.append(train_dataset)
 
@@ -108,6 +109,7 @@ def train_collie(
             prompt_loss_weight=0.0,
             prompt_until="result",
             max_examples=data_args.max_examples_per_task_val,
+            use_chat_format=data_args.use_chat_format,
         )
         dev_datasets[os.path.splitext(os.path.basename(dev_path))[0]] = dev_dataset
 
@@ -269,6 +271,7 @@ def inference_collie(
             prompt_loss_weight=0.0,
             prompt_until="result",
             max_examples=data_args.max_examples_per_task_test,
+            use_chat_format=data_args.use_chat_format,
         )
 
         logging.info(f"Running inference on {test_task}...")
