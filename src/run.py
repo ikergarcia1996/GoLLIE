@@ -299,6 +299,10 @@ def inference_collie(
                     raise OverflowError(f"Unable to decode predictions: {predictions}")
 
                 for prediction in predictions:
+                    if data_args.use_chat_format:
+                        prediction = prediction.strip().split("```python\n")[-1].rstrip("```")
+                    else:
+                        prediction = prediction.strip().split("result = ")[-1]
                     print(
                         json.dumps({"model_prediction": prediction}, ensure_ascii=False),
                         file=f,

@@ -553,7 +553,7 @@ class TestCollieDataset(unittest.TestCase):
             {"role": "user", "content": "Default text."},
             {"role": "assistant", "content": "WTF."},
             {"role": "user", "content": "Another default text."},
-            {"role": "assistant", "content": "WTF."},
+            {"role": "assistant", "content": "```python\nWTF.\n```"},
         ]
 
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -567,14 +567,32 @@ class TestCollieDataset(unittest.TestCase):
                 dataset_path=os.path.join(tmpdirname, "tmp.ee.train.jsonl"),
                 is_encoder_decoder=False,
                 max_length=2048,
+                inference=True,
+                prompt_loss_weight=0.0,
+                use_chat_format=True,
+            )
+
+            self.assertFalse("labels" in chat_dataset[0])
+
+            chat_dataset = CollieDataset(
+                tokenizer=tokenizer,
+                dataset_path=os.path.join(tmpdirname, "tmp.ee.train.jsonl"),
+                is_encoder_decoder=False,
+                max_length=2048,
                 inference=False,
                 prompt_loss_weight=0.0,
                 use_chat_format=True,
             )
 
-            import rich
+            self.assertListEqual(chat_dataset[0].input_ids, chat_dataset[0].labels)
 
-            rich.print(chat_dataset[0])
+            self.assertEqual(
+                tokenizer.decode(chat_dataset[0].input_ids, skip_special_tokens=True)
+                .strip()
+                .split("```python\n")[-1]
+                .rstrip("```"),
+                "WTF.",
+            )
 
     def test_dataloader(self):
         from torch.utils.data import DataLoader
