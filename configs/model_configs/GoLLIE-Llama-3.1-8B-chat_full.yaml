@@ -1,14 +1,12 @@
 #Training args
 model_name_or_path: meta-llama/Meta-Llama-3.1-8B-Instruct
 torch_dtype: bfloat16
-use_lora: true
-quantization: 4
-quantization_inference: null
-bf16_full_eval: true
+use_lora: false
+quantization: null
 gradient_checkpointing: true
 force_auto_device_map: false
 use_flash_attention: true
-deepspeed: configs/deepspeed_configs/deepspeed_zero2.json
+deepspeed: configs/deepspeed_configs/deepspeed_zero3.json
 use_chat_format: true
 
 # dataset arguments
@@ -84,18 +82,20 @@ evaluate_all_checkpoints: true
 
 # batch size
 per_device_train_batch_size: 2
-per_device_eval_batch_size: 8
-gradient_accumulation_steps: 8
+per_device_eval_batch_size: 2
+gradient_accumulation_steps: 4
 generation_num_beams: 1
 
 # optimizer settings
-optim: adamw_torch_fused
-learning_rate: 0.0003
-weight_decay: 0.001
-num_train_epochs: 1 # 3
+optim: adamw_torch
+learning_rate: 0.000005
+weight_decay: 0.0
+num_train_epochs: 1
 lr_scheduler_type: cosine
 warmup_ratio: 0.1
-adam_epsilon: 0.0000001
+adam_beta1: 0.9
+adam_beta2: 0.95
+adam_epsilon: 1e-12
 
 # lora settings
 lora_r: 128
