@@ -31,7 +31,7 @@ validation_tasks:
 test_tasks:
   - ace05.eae
   - ace05.ner
-  - ace05.re
+  - ace05.rc
   - ace05.ver
   - bc5cdr.ner
   - conll03.ner

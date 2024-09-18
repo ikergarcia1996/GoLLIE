@@ -457,6 +457,7 @@ class Sampler:
                                 messages[-1]["content"].lstrip('"```python\n"').rstrip('"\n```"')
                             ),  # Only evaluate on the last item
                             "conversation": messages,
+                            "unlabelled_sentence": instances[-1]["text"],
                         }
                     else:
                         for _messages, _instances in zip(
@@ -471,6 +472,7 @@ class Sampler:
                                     _messages[-1]["content"].lstrip('"```python\n"').rstrip('"\n```"')
                                 ),  # Only evaluate on the last item
                                 "conversation": _messages,
+                                "unlabelled_sentence": _instances[-1]["text"],
                             }
 
     def __iter__(self):

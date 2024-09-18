@@ -36,6 +36,15 @@ def train_collie(
     data_args: DataTrainingArguments,
     training_args: Seq2SeqTrainingArguments,
 ):
+    """Train the CoLLIE model.
+    Args:
+        model_args (ModelArguments): Arguments related to the model configuration.
+        data_args (DataTrainingArguments): Arguments related to the data and training configuration.
+        training_args (Seq2SeqTrainingArguments): Arguments related to the sequence-to-sequence training configuration.
+
+    Raises:
+        ValueError: If the model is not an encoder-decoder model and `use_chat_format` is set to True.
+    """
     logging.info(f"Loading {model_args.model_name_or_path} model...")
 
     model, tokenizer = load_model(
@@ -140,6 +149,28 @@ def inference_collie(
     training_args: Seq2SeqTrainingArguments,
     checkpoint_path: str = None,
 ):
+    """
+    Perform inference using the CoLLIE model.
+    Args:
+        model_args (ModelArguments): Arguments related to the model configuration.
+        data_args (DataTrainingArguments): Arguments related to the data and training configuration.
+        training_args (Seq2SeqTrainingArguments): Arguments related to the sequence-to-sequence training configuration.
+        checkpoint_path (str, optional): Path to the checkpoint to load the model from. Defaults to None.
+    Raises:
+        OverflowError: If unable to decode predictions due to overflow.
+    Warnings:
+        - If `predict_with_generate` is set to False, only the loss on the test set will be computed.
+        - If `predict_with_generate` is False and `prediction_loss_only` is also False, a warning is issued due to contradictory settings.
+        - If `use_lora` is specified but no path to LORA weights is provided, a warning is issued.
+        - If `merge_lora_before_inference` is specified without quantization precision, a warning is issued.
+    Notes:
+        - If `do_train` is True, the model will be loaded from the specified checkpoint or output directory.
+        - If `merge_lora_before_inference` is True, LORA weights will be merged before inference.
+        - Predictions and metrics are saved to the output directory.
+        - If `predict_with_generate` is True, task scores are evaluated and logged.
+        - If a merged model is created and `keep_merged_model_after_eval` is False, the merged model is deleted after inference.
+    """
+
     if not training_args.predict_with_generate:
         logging.warning(
             "You have set predict_with_generate to False. We will only compute the loss"
@@ -258,61 +289,76 @@ def inference_collie(
     )
 
     for test_task in data_args.test_tasks:
-        test_dataset = os.path.join(
-            data_args.dataset_dir,
-            f"{test_task}.{'test' if not data_args.use_dev_inference else 'dev'}.jsonl",
+        _split = "test" if not data_args.use_dev_inference else "dev"
+
+        test_datasets = sorted(
+            glob.glob(
+                os.path.join(
+                    data_args.dataset_dir,
+                    f"{test_task}.*{_split}.jsonl",
+                )
+            )
         )
-        test_dataset = CollieDataset(
-            tokenizer=tokenizer,
-            dataset_path=test_dataset,
-            max_length=data_args.max_seq_length,
-            is_encoder_decoder=model.config.is_encoder_decoder,
-            inference=True if training_args.predict_with_generate else False,
-            prompt_loss_weight=0.0,
-            prompt_until="result",
-            max_examples=data_args.max_examples_per_task_test,
-            use_chat_format=data_args.use_chat_format,
-        )
+        for test_dataset in test_datasets:
+            test_dataset = CollieDataset(
+                tokenizer=tokenizer,
+                dataset_path=test_dataset,
+                max_length=data_args.max_seq_length,
+                is_encoder_decoder=model.config.is_encoder_decoder,
+                inference=True if training_args.predict_with_generate else False,
+                prompt_loss_weight=0.0,
+                prompt_until="result",
+                max_examples=data_args.max_examples_per_task_test,
+                use_chat_format=data_args.use_chat_format,
+            )
 
-        logging.info(f"Running inference on {test_task}...")
-        predictions = trainer.predict(test_dataset)
+            logging.info(f"Running inference on {test_task}...")
+            predictions = trainer.predict(test_dataset)
 
-        if not trainer.is_world_process_zero():
-            # In distributed training, we only want one process to write predictions to the file.
-            continue
+            if not trainer.is_world_process_zero():
+                # In distributed training, we only want one process to write predictions to the file.
+                continue
 
-        output_dir = training_args.output_dir if checkpoint_path is None else checkpoint_path
-        if training_args.predict_with_generate:
-            output_name = f"{os.path.join(output_dir,'predictions',test_task)}.predictions.jsonl"
-
-            os.makedirs(os.path.join(output_dir, "predictions"), exist_ok=True)
-
-            with open(output_name, "w", encoding="utf8") as f:
-                logging.info(f"Writing predictions to {output_name}")
-                predictions = predictions.predictions
-                # Switch all -100 to tokenizer.pad_token_id, so we can decode the predictions
-                predictions[predictions == -100] = tokenizer.pad_token_id
-
-                try:
-                    predictions = tokenizer.batch_decode(predictions, skip_special_tokens=True)
-                except OverflowError:
-                    raise OverflowError(f"Unable to decode predictions: {predictions}")
-
-                for prediction in predictions:
-                    if data_args.use_chat_format:
-                        prediction = prediction.strip().split("```python\n")[-1].rstrip("```")
-                    else:
-                        prediction = prediction.strip().split("result = ")[-1]
-                    print(
-                        json.dumps({"model_prediction": prediction}, ensure_ascii=False),
-                        file=f,
+            output_dir = training_args.output_dir if checkpoint_path is None else checkpoint_path
+            if training_args.predict_with_generate:
+                if test_dataset.k_shot == 0:
+                    output_name = f"{os.path.join(output_dir,'predictions',test_task)}.predictions.jsonl"
+                else:
+                    output_name = (
+                        f"{os.path.join(output_dir,'predictions',test_task)}.k-{test_dataset.k_shot}.predictions.jsonl"
                     )
 
-        else:
-            metrics_name = f"{os.path.join(output_dir,test_task)}.metrics.json"
-            with open(metrics_name, "w", encoding="utf8") as f:
-                logging.info(f"Writing metrics to {metrics_name}")
-                json.dump(predictions.metrics, fp=f, ensure_ascii=False, indent=4)
+                os.makedirs(os.path.join(output_dir, "predictions"), exist_ok=True)
+
+                with open(output_name, "w", encoding="utf8") as f:
+                    logging.info(f"Writing predictions to {output_name}")
+                    predictions = predictions.predictions
+                    # Switch all -100 to tokenizer.pad_token_id, so we can decode the predictions
+                    predictions[predictions == -100] = tokenizer.pad_token_id
+
+                    try:
+                        predictions = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+                    except OverflowError:
+                        raise OverflowError(f"Unable to decode predictions: {predictions}")
+
+                    for prediction in predictions:
+                        if data_args.use_chat_format:
+                            prediction = prediction.strip().split("```python\n")[-1].rstrip("```")
+                        else:
+                            prediction = prediction.strip().split("result = ")[-1]
+                        print(
+                            json.dumps({"model_prediction": prediction}, ensure_ascii=False),
+                            file=f,
+                        )
+
+            else:
+                if test_dataset.k_shot == 0:
+                    metrics_name = f"{os.path.join(output_dir,test_task)}.metrics.json"
+                else:
+                    metrics_name = f"{os.path.join(output_dir,test_task)}.k-{test_dataset.k_shot}.metrics.json"
+                with open(metrics_name, "w", encoding="utf8") as f:
+                    logging.info(f"Writing metrics to {metrics_name}")
+                    json.dump(predictions.metrics, fp=f, ensure_ascii=False, indent=4)
 
     if training_args.predict_with_generate and trainer.is_world_process_zero():
         task_scores = evaluate(model_args, data_args, training_args, checkpoint_path=checkpoint_path)
@@ -391,24 +437,26 @@ if __name__ == "__main__":
 
             # Sort checkpoints by step number
             checkpoints = sorted(checkpoints, key=lambda x: int(x.split("-")[-1]))
-            # Evaluate only checkpoints trained for 1000 or more steps, underfit models are very slow to evaluate
-            no_eval_checkpoints = [c for c in checkpoints if int(c.split("-")[-1]) < 1000]
-            if len(no_eval_checkpoints) > 0:
-                logging.warning(
-                    f"Found {len(no_eval_checkpoints)} checkpoints in {training_args.output_dir} that will not be"
-                    f" evaluated: {no_eval_checkpoints} . We will evaluate only checkpoints trained for 1000 or more"
-                    " steps, underfit models are very slow to evaluate."
+
+            if not data_args.use_chat_format:
+                # Evaluate only checkpoints trained for 1000 or more steps, underfit models are very slow to evaluate
+                no_eval_checkpoints = [c for c in checkpoints if int(c.split("-")[-1]) < 1000]
+                if len(no_eval_checkpoints) > 0:
+                    logging.warning(
+                        f"Found {len(no_eval_checkpoints)} checkpoints in {training_args.output_dir} that will not be"
+                        f" evaluated: {no_eval_checkpoints} . We will evaluate only checkpoints trained for 1000 or"
+                        " more steps, underfit models are very slow to evaluate."
+                    )
+
+                checkpoints = [c for c in checkpoints if int(c.split("-")[-1]) >= 1000]
+
+                # Add also the last checkpoint (stored in the output_dir)
+                # checkpoints.append(training_args.output_dir)
+
+                logging.info(
+                    f"Found {len(checkpoints)} checkpoints in {training_args.output_dir}:"
+                    f" {checkpoints} . We will evaluate each of them."
                 )
-
-            checkpoints = [c for c in checkpoints if int(c.split("-")[-1]) >= 1000]
-
-            # Add also the last checkpoint (stored in the output_dir)
-            # checkpoints.append(training_args.output_dir)
-
-            logging.info(
-                f"Found {len(checkpoints)} checkpoints in {training_args.output_dir}:"
-                f" {checkpoints} . We will evaluate each of them."
-            )
 
             # Evaluate each checkpoint
             for checkpoint in checkpoints:

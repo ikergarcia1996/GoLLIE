@@ -489,9 +489,14 @@ class CollieDataset(Dataset):
             raise ValueError(f"Invalid prompt_until value: {prompt_until}. Valid values are 'all', 'result', 'text'")
         self.prompt_until = prompt_until
 
-        try:
-            self.dataset_name, self.task_name, self.split, extension = os.path.basename(dataset_path).split(".")
-        except ValueError:
+        _dataset_info = os.path.basename(dataset_path).split(".")
+        if len(_dataset_info) == 5:  # There is K-shot info
+            self.dataset_name, self.task_name, self.k_shot, self.split, _ = os.path.basename(dataset_path).split(".")
+            self.k_shot = int(self.k_shot.split("-")[-1])
+        elif len(_dataset_info) == 4:
+            self.dataset_name, self.task_name, self.split, _ = os.path.basename(dataset_path).split(".")
+            self.k_shot = 0
+        else:
             raise ValueError(
                 f"Something is wrong with the dataset path {dataset_path}. Please check it and ensure "
                 "it follows the format `dataset_name.task_name.split.jsonl`"

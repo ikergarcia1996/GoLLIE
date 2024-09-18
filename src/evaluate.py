@@ -3,6 +3,7 @@ import importlib
 import json
 import logging
 import os
+import re
 import sys
 from typing import Any, Dict, List, Type
 
@@ -168,6 +169,50 @@ def remove_hallucinations(unlabelled_sentence: str, predictions: List[Any]) -> L
     return accepted_list
 
 
+def get_k_shots(file_name: str) -> int:
+    shots = re.search(r"k-(\d+)", file_name)
+
+    return int(shots.group(1)) if shots else 0
+
+
+def evaluate_task(gold_path: str, pred_path: str, task: str) -> Dict[str, Dict[str, Dict[str, float]]]:
+    if not os.path.exists(gold_path):
+        raise FileNotFoundError(f"File not found: '{gold_path}'")
+
+    if not os.path.exists(pred_path):
+        raise FileNotFoundError(f"File not found: '{pred_path}'")
+
+    task_logger = ResultLogger(task)
+    task_module = None
+    scorer = None
+
+    with open(gold_path, "rt", encoding="utf8") as gold_f, open(pred_path, "rt", encoding="utf8") as pred_f:
+        for gold_line, pred_line in zip(gold_f, pred_f):
+            gold_line = json.loads(gold_line)
+            pred_line = json.loads(pred_line)
+
+            if not task_module:
+                task_module = task_id_to_prompts(gold_line["task_id"])
+                import_prompts(task_module)
+
+            if not scorer:
+                scorer = get_class(gold_line["scorer_cls"])()
+
+            gold_labels: AnnotationList = AnnotationList.from_output(str(gold_line["labels"]), task_module=task_module)
+
+            pred_labels: AnnotationList = AnnotationList.from_output(
+                str(pred_line["model_prediction"]), task_module=task_module
+            )
+
+            task_logger.add_sentence(
+                sentence=gold_line["unlabelled_sentence"], gold_labels=gold_labels, pred_labels=pred_labels
+            )
+
+    task_metrics = task_logger.compute_metrics(scorer)
+
+    return task_logger, task_metrics
+
+
 def evaluate(
     model_args: ModelArguments,
     data_args: DataTrainingArguments,
@@ -199,50 +244,32 @@ def evaluate(
     with tqdm(total=len(data_args.test_tasks), desc="Evaluating") as pbar:
         for task in data_args.test_tasks:
             pbar.set_description(f"Evaluating {task}")
-            gold_path = os.path.join(
-                gold_data_dir,
-                f"{task}.{'test' if not data_args.use_dev_inference else 'dev'}.jsonl",
-            )
-            pred_path = os.path.join(predictions_dir, task) + ".predictions.jsonl"
+            split = "test" if not data_args.use_dev_inference else "dev"
 
-            if not os.path.exists(gold_path):
-                raise FileNotFoundError(f"File not found: '{gold_path}'")
+            # gold_path = os.path.join(
+            #     gold_data_dir,
+            #     f"{task}.{'test' if not data_args.use_dev_inference else 'dev'}.jsonl",
+            # )
+            # pred_path = os.path.join(predictions_dir, task) + ".predictions.jsonl"
+            k_shots_paths = sorted(glob.glob(os.path.join(gold_data_dir, f"{task}*{split}.jsonl")))
+            k_shots = [get_k_shots(file_name=file_name) for file_name in k_shots_paths]
+            for k, gold_path in zip(k_shots, k_shots_paths):
+                pred_path = pred_path = (
+                    os.path.join(predictions_dir, task) + ".predictions.jsonl"
+                    if not k
+                    else os.path.join(predictions_dir, task) + f".k-{k}.predictions.jsonl"
+                )
+                try:
+                    task_logger, task_metrics = evaluate_task(gold_path, pred_path, task)
+                except FileNotFoundError:
+                    logging.info(f"No predictions file found for k-{k}. Skipping.")
+                    continue
 
-            if not os.path.exists(pred_path):
-                raise FileNotFoundError(f"File not found: '{pred_path}'")
+                all_scores[task] = task_metrics
 
-            task_logger = ResultLogger(task)
-            task_module = None
-            scorer = None
-
-            with open(gold_path, "rt", encoding="utf8") as gold_f, open(pred_path, "rt", encoding="utf8") as pred_f:
-                for gold_line, pred_line in zip(gold_f, pred_f):
-                    gold_line = json.loads(gold_line)
-                    pred_line = json.loads(pred_line)
-
-                    if not task_module:
-                        task_module = task_id_to_prompts(gold_line["task_id"])
-                        import_prompts(task_module)
-
-                    if not scorer:
-                        scorer = get_class(gold_line["scorer_cls"])()
-
-                    gold_labels: AnnotationList = AnnotationList.from_output(
-                        str(gold_line["labels"]), task_module=task_module
-                    )
-
-                    pred_labels: AnnotationList = AnnotationList.from_output(
-                        str(pred_line["model_prediction"]), task_module=task_module
-                    )
-
-                    task_logger.add_sentence(
-                        sentence=gold_line["unlabelled_sentence"], gold_labels=gold_labels, pred_labels=pred_labels
-                    )
-
-            task_metrics = task_logger.compute_metrics(scorer)
-            all_scores[task] = task_metrics
-            # rich.print(f"{task} scores: {task_metrics}")
-            task_logger.print_predictions(output_path=os.path.join(predictions_dir, f"{task}.eval_file.json"))
+                task_logger.print_predictions(
+                    output_path=os.path.join(predictions_dir, f"{task}.k-{k}.eval_file.json")
+                )
             pbar.update(1)
 
     with open(scores_file_name, "wt", encoding="utf8") as f:
