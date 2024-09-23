@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import sys
+from collections import defaultdict
 from typing import Any, Dict, List, Type
 
 from tqdm import tqdm
@@ -237,7 +238,7 @@ def evaluate(
     predictions_dir = os.path.join(output_dir, "predictions")
 
     gold_data_dir = data_args.dataset_dir
-    all_scores = {}
+    all_scores = defaultdict(dict)
 
     scores_file_name = os.path.join(output_dir, "task_scores.json")
     scores_file_name_summary = os.path.join(output_dir, "task_scores_summary.json")
@@ -265,7 +266,7 @@ def evaluate(
                     logging.info(f"No predictions file found for k-{k}. Skipping.")
                     continue
 
-                all_scores[task] = task_metrics
+                all_scores[task][f"k-{k}"] = task_metrics
 
                 task_logger.print_predictions(
                     output_path=os.path.join(predictions_dir, f"{task}.k-{k}.eval_file.json")
@@ -275,10 +276,11 @@ def evaluate(
     with open(scores_file_name, "wt", encoding="utf8") as f:
         json.dump(all_scores, f, indent=4, ensure_ascii=False)
 
-    for task, score in all_scores.items():
-        for metric, value in score.items():
-            if "class_scores" in value:
-                value.pop("class_scores")
+    for task, k_shot in all_scores.items():
+        for k, score in k_shot.items():
+            for metric, value in score.items():
+                if "class_scores" in value:
+                    value.pop("class_scores")
 
     with open(scores_file_name_summary, "wt", encoding="utf8") as f:
         json.dump(all_scores, f, indent=4, ensure_ascii=False)

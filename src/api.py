@@ -1,26 +1,198 @@
 import ast
 import inspect
+import json
 from dataclasses import dataclass
-from typing import Any, List, Union
+from typing import Any, List, Tuple, Union
 
 import black
+import torch
+from jinja2 import Template
+
+from src.model import load_model
+from src.tasks.utils_data import SYSTEM_PROMPT
+from transformers import AutoConfig
+
+
+DEFAULT_USER_TEMPLATE = Template(
+    """Extract the relevant information from the following text:
+```python
+text = {{ text.__repr__() }}
+```
+"""
+)
+
+
+@dataclass()
+class InputExample:
+    text: str
+    annotations: str
 
 
 @dataclass
 class APIOutput:
     text: str
     guidelines: List[type]
-    annotations: List[object]
+    annotations: Union[List[object], List[List[object]]]
+
+
+def prepare_data_for_chat(texts: List[str], guidelines: str, examples: List[InputExample] = None):
+    base_conversation = []
+
+    base_conversation.append(SYSTEM_PROMPT.format(guidelines=guidelines))
+    for example in examples:
+        base_conversation.append(
+            {
+                "role": "user",
+                "content": DEFAULT_USER_TEMPLATE.render(text=example.text),
+            }
+        )
+        base_conversation.append(
+            {
+                "role": "assistant",
+                "content": "```python\n" + example.annotations + "\n```",
+            }
+        )
+
+    conversations = []
+    for text in texts:
+        conversations.append(
+            base_conversation
+            + [
+                {
+                    "role": "user",
+                    "content": DEFAULT_USER_TEMPLATE.render(text=text),
+                }
+            ]
+        )
+
+
+def prepare_data(texts: List[str], guidelines: str):
+    ...
+
+
+class GollieInferenceWrapper:
+    def __init__(self) -> None:
+        return NotImplementedError
+
+    def __call__(
+        self,
+        texts: Union[List[str], str],
+        guidelines: List[type],
+        examples: List[Tuple[str, List[object]]] = None,
+        **kwargs,
+    ) -> Union[APIOutput, List[APIOutput]]:
+        raise NotImplementedError
+
+
+class LocalGollieInferenceWrapper(GollieInferenceWrapper):
+    def __init__(
+        self,
+        model: str,
+        use_chat_format: bool = True,
+        dtype: str = "bfloat16",
+        use_flash_attention: bool = True,
+        **kwargs,
+    ) -> None:
+        try:
+            self.config = AutoConfig.from_pretrained(model)
+            model_name_or_path = model
+            use_lora = False
+        except OSError as e:
+            msg = e.__str__()
+            if "does not appear to have a file named config.json." in msg:
+                with open(f"{model}/adapter_config.json", "r") as f:
+                    model_name_or_path = json.load(f)["model_name_or_path"]
+                    self.config = AutoConfig.from_pretrained(model_name_or_path)
+                    use_lora = True
+            else:
+                raise e
+
+        self.lora_name_or_path = model if use_lora else None
+        self.dtype = dtype
+        self.use_flash_attention = use_flash_attention
+        self.use_chat_format = use_chat_format
+
+        self.model, self.tokenizer = load_model(
+            inference=True,
+            model_weights_name_or_path=model_name_or_path,
+            use_lora=use_lora,
+            lora_weights_name_or_path=self.lora_name_or_path,
+            torch_dtype=self.dtype,
+            use_flash_attention=self.use_flash_attention,
+            force_auto_device_map=True,
+        )
+
+    def __call__(
+        self,
+        texts: Union[List[str], str],
+        guidelines: str,
+        examples: List[Tuple[str, str]] = None,
+        num_return_sequences: int = 1,
+        **kwargs,
+    ) -> Union[List[str], List[List[str]]]:
+        if not self.use_chat_format and examples is not None:
+            raise ValueError("Examples are only supported when using chat format.")
+
+        if not isinstance(texts, list):
+            texts = [texts]
+
+        if self.use_chat_format:
+            input_data = prepare_data_for_chat(texts, guidelines, examples)
+            input_data = self.tokenizer.apply_chat_template(
+                input_data, add_generation_prompt=True, return_tensors="pt", padding=True
+            )
+        else:
+            input_data = prepare_data(texts, guidelines)
+            input_data = self.tokenizer(input_data, return_tensors="pt", padding=True)
+
+        with torch.no_grad():
+            outputs = self.model.generate(
+                inputs=input_data.input_ids,
+                return_dict_in_generate=True,
+                num_return_sequences=num_return_sequences,
+                **kwargs,
+            ).sequences
+
+        outputs: List[str] = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        for i in range(len(outputs)):
+            if self.use_chat_format:
+                outputs[i] = outputs[i].strip().split("```python\n")[-1].rstrip("```")
+            else:
+                outputs[i] = outputs[i].strip().strip().split("result = ")[-1]
+
+        if num_return_sequences > 1:
+            output_list = []
+            for i in range(len(texts)):
+                output_list.append(outputs[i * num_return_sequences : (i + 1) * num_return_sequences])
+
+        return outputs
+
+
+class RemoteGollieInferenceWrapper(GollieInferenceWrapper):
+    def __init__(self, base_url: str) -> None:
+        self.base_url = base_url
+
+    def __call__(
+        self,
+        texts: Union[List[str], str],
+        guidelines: List[type],
+        examples: List[Tuple[str, str]] = None,
+        **kwargs,
+    ) -> Union[List[str], List[List[str]]]:
+        raise NotImplementedError
 
 
 class GollieAPI:
-    def __init__(self, model: str, base_url: str = None, use_chat_format: bool = True) -> None:
-        ...
+    def __init__(self, model: str, base_url: str = None, use_chat_format: bool = True, **kwargs) -> None:
+        if base_url is not None:
+            self.inference = RemoteGollieInferenceWrapper(base_url)
+        else:
+            self.inference = LocalGollieInferenceWrapper(model, use_chat_format, **kwargs)
 
     def __call__(
         self, texts: Union[List[str], str], guidelines: List[type], **kwargs
     ) -> Union[APIOutput, List[APIOutput]]:
-        ...
+        raise NotImplementedError
 
     @staticmethod
     def _ensure_safe_eval(expression: str, valid_calls: List[str] = []) -> bool:

@@ -4,6 +4,7 @@
 data
 wandb/*
 assets/plots/*
+assets/results/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
