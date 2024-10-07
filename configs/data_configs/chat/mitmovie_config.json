@@ -6,6 +6,7 @@
     "train_file": "data/MITmovie/engtrain.bio",
     "dev_file": "data/MITmovie/engdev.bio",
     "test_file": "data/MITmovie/engtest.bio",
+    "few-shot_examples_from": "data/MITmovie/engtrain.bio",
     "prompt_template": "templates/user_prompt.j2",
     "parallel_instances": 15,
     "use_chat_format": true,

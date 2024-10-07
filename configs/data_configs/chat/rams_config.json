@@ -8,6 +8,7 @@
     "train_file": "data/rams/train.jsonlines",
     "dev_file": "data/rams/dev.jsonlines",
     "test_file": "data/rams/test.jsonlines",
+    "few-shot_examples_from": "data/rams/train.jsonlines",
     "prompt_template": "templates/user_prompt_rams.j2",
     "parallel_instances": 15,
     "use_chat_format": true,

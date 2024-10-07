@@ -6,6 +6,7 @@
     "train_file": "data/diann/en-diann-train.tsv",
     "dev_file": "data/diann/en-diann-dev.tsv",
     "test_file": "data/diann/en-diann-test.tsv",
+    "few-shot_examples_from": "data/diann/en-diann-train.tsv",
     "prompt_template": "templates/user_prompt.j2",
     "parallel_instances": 15,
     "use_chat_format": true,

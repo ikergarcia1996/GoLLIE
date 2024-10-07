@@ -6,6 +6,7 @@
     "train_file": "train",
     "dev_file": "validation",
     "test_file": "test",
+    "few-shot_examples_from": "train",
     "prompt_template": "templates/user_prompt.j2",
     "parallel_instances": 15,
     "use_chat_format": true,

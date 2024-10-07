@@ -20,5 +20,5 @@ export OMP_NUM_THREADS=16
 echo CUDA_VISIBLE_DEVICES "${CUDA_VISIBLE_DEVICES}"
 
 export PYTHONPATH="$PYTHONPATH:$PWD"
-torchrun --standalone --master_port 37227 --nproc_per_node=2 src/run.py configs/model_configs/GoLLIE-Llama-3.1-8B-chat_bfloat16_5e-4.yaml
+# torchrun --standalone --master_port 37227 --nproc_per_node=2 src/run.py configs/model_configs/GoLLIE-Llama-3.1-8B-chat_bfloat16_5e-4.yaml
 torchrun --standalone --master_port 37227 --nproc_per_node=2 src/run.py configs/model_configs/eval/GoLLIE-Llama-3.1-8B-chat_bfloat16_5e-4.yaml

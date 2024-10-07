@@ -163,6 +163,7 @@ class Sampler:
         do_not_shuffle: bool = False,
         disable_paraphrases: bool = False,
         use_chat_format: bool = False,
+        few_shot_examples: List[Dict[str, str]] = None,
         **kwargs,
     ) -> None:
         self.do_not_shuffle = do_not_shuffle
@@ -240,7 +241,7 @@ class Sampler:
             self.include_examples_prob = 1.0
         self.examples = examples
         if include_examples_prob > 0 and not self.examples:
-            logging.warn(
+            logging.warning(
                 "`include_examples_prob` is > 0 but `examples` is None. If you want to include examples, you must"
                 " provide examples. `include_examples_prob` has been changed to 0.0"
             )
@@ -250,6 +251,19 @@ class Sampler:
         self._class_label_re = re.compile(r"class (\w+)")
 
         self.use_chat_format = use_chat_format
+        if few_shot_examples and not self.use_chat_format:
+            raise ValueError("Few shot examples can only be used with chat format.")
+        if few_shot_examples:
+            if not isinstance(few_shot_examples, list):
+                raise ValueError("Few shot examples must be a list of lists of messages.")
+            else:
+                if len(few_shot_examples):
+                    if not isinstance(few_shot_examples[0], list):
+                        few_shot_examples = [few_shot_examples]
+
+            self.few_shot_examples = few_shot_examples
+        else:
+            self.few_shot_examples = None
 
     def _sample(self, instances):
         # _gold refers to specifc gold information that is used in the template (depends on the task)
@@ -484,6 +498,9 @@ class Sampler:
         else:
             total_inst = self.parallel_instances
 
+        if self.use_chat_format and self.few_shot_examples:
+            total_inst = 1
+
         prev_id = None
         for elem in self.loader:
             # Prevent mixing sentences from different documents. TODO: generalize
@@ -491,6 +508,13 @@ class Sampler:
                 prev_id is not None and elem["doc_id"] != prev_id and not self.use_chat_format
             ):
                 for samp in self._sample(instances):
+                    if self.use_chat_format and self.few_shot_examples:
+                        few_shot_examples = random.sample(self.few_shot_examples, k=1)[0]
+                        samp["conversation"] = [
+                            samp["conversation"][0],
+                            *few_shot_examples,
+                            *samp["conversation"][1:],
+                        ]
                     yield samp
                 instances = []
 

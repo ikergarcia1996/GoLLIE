@@ -6,6 +6,7 @@
     "train_file": "data/HarveyNER/tweets.train.bio",
     "dev_file": "data/HarveyNER/tweets.dev.bio",
     "test_file": "data/HarveyNER/tweets.test.bio",
+    "few-shot_examples_from": "data/HarveyNER/tweets.train.bio",
     "prompt_template": "templates/user_prompt.j2",
     "parallel_instances": 15,
     "use_chat_format": true,

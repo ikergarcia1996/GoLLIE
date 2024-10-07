@@ -6,6 +6,7 @@
     "train_file": "train",
     "dev_file": "validation",
     "test_file": "test",
+    "few-shot_examples_from": "train",
     "seed": [0, 24, 42],
     "label_noise_prob": [0.15, 0.50, 0.75],
     "prompt_template": "templates/user_prompt.j2",

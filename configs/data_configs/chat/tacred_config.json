@@ -8,6 +8,7 @@
     "train_file": "data/tacred/train.json",
     "dev_file": "data/tacred/dev.json",
     "test_file": "data/tacred/test.json",
+    "few-shot_examples_from": "data/tacred/train.json",
     "prompt_template": "templates/user_prompt_tacred.j2",
     "parallel_instances": 15,
     "use_chat_format": true,

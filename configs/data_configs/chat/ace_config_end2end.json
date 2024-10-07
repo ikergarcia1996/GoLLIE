@@ -11,6 +11,7 @@
     "train_file": "data/ace05/train.sentence.json",
     "dev_file": "data/ace05/dev.sentence.json",
     "test_file": "data/ace05/test.sentence.json",
+    "few-shot_examples_from": "data/ace05/train.sentence.json",
     "use_chat_format": true,
     "seed": [0, 24, 42],
     "label_noise_prob": [0.15, 0.50, 0.75],

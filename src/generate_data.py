@@ -3,6 +3,7 @@ import json
 import logging
 import multiprocessing as mp
 import os
+import random
 from argparse import ArgumentParser
 from functools import partial
 from itertools import cycle
@@ -19,6 +20,13 @@ def get_class(class_path: str) -> Type:
         mod = getattr(mod, comp)
 
     return mod
+
+
+def shuffle_conversations(conversations):
+    conversation_pairs = [(conversations[i * 2], conversations[(i * 2) + 1]) for i in range(len(conversations) // 2)]
+    random.shuffle(conversation_pairs)
+
+    return [item for sublist in conversation_pairs for item in sublist]
 
 
 def multicpu_generator(args, tqdm_position, config):
@@ -66,6 +74,43 @@ def multicpu_generator(args, tqdm_position, config):
 
                 logging.info(f"Data saved to {os.path.abspath(os.path.join(args.output_dir, output_name))}")
 
+    if (
+        "few-shot_examples_from" in config
+        and max(args.k_shots) > 0
+        and config["few-shot_examples_from"]
+        and ("dev_file" in config or "test_file" in config)
+    ):
+        if not config["use_chat_format"]:
+            raise NotImplementedError("Few-shot examples are only supported for chat format.")
+
+        few_shot_examples = {}
+        if config["few-shot_examples_from"].startswith("prepro:"):
+            raise NotImplementedError("Few-shot examples from JSONL files are not supported yet.")
+        elif config["few-shot_examples_from"] == "self":
+            logging.info("Few-shot examples are generated from the file itself.")
+        else:
+            config["seed"] = 0
+            logging.warning(config.__str__())
+            few_shot_dataloader = dataloader_cls(config["few-shot_examples_from"], **config)
+            for task in config["tasks"]:
+                _kwargs = {**config, **config["task_configuration"][task]}
+                k = max(args.k_shots)
+                _kwargs["parallel_instances"] = k
+
+                sampler = sampler_cls(
+                    few_shot_dataloader,
+                    task=task,
+                    split="dev",
+                    **_kwargs,
+                )
+                # examples = next(iter(sampler))["conversation"][1:]
+                examples = [example["conversation"][1:] for example in sampler]
+                few_shot_examples[task] = examples
+                # logging.warning(f"{k} Few-shot examples for {task}: {examples}")
+                logging.warning(f"{len(examples)} {k}-shot example batches for {task}.")
+    else:
+        few_shot_examples = None
+
     if "dev_file" in config:
         config["seed"] = 0
         dataloader = dataloader_cls(config["dev_file"], **config)
@@ -74,19 +119,24 @@ def multicpu_generator(args, tqdm_position, config):
 
             # Handle few-shot examples
             k_shots = [0] + args.k_shots
-            k_shots = [k + 1 for k in k_shots]
+            # k_shots = [k + 1 for k in k_shots]
             for k in k_shots:
-                _kwargs["parallel_instances"] = k
+                _kwargs["parallel_instances"] = 1
+
+                _task_few_shots = few_shot_examples[task] if few_shot_examples else None
+                if _task_few_shots:
+                    _task_few_shots = [batch[: k * 2] for batch in _task_few_shots]
 
                 sampler = sampler_cls(
                     dataloader,
                     task=task,
                     split="dev",
+                    few_shot_examples=_task_few_shots,
                     **_kwargs,
                 )
 
                 if k > 1:
-                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.k-{k-1}.dev.jsonl"
+                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.k-{k}.dev.jsonl"
                 else:
                     output_name = f"{config['dataset_name'].lower()}.{task.lower()}.dev.jsonl"
 
@@ -116,19 +166,24 @@ def multicpu_generator(args, tqdm_position, config):
 
             # Handle few-shot examples
             k_shots = [0] + args.k_shots
-            k_shots = [k + 1 for k in k_shots]
+            # k_shots = [k + 1 for k in k_shots]
             for k in k_shots:
-                _kwargs["parallel_instances"] = k
+                _kwargs["parallel_instances"] = 1
+
+                _task_few_shots = few_shot_examples[task] if few_shot_examples else None
+                if _task_few_shots:
+                    _task_few_shots = [batch[: k * 2] for batch in _task_few_shots]
 
                 sampler = sampler_cls(
                     dataloader,
                     task=task,
                     split="test",
+                    few_shot_examples=_task_few_shots,
                     **_kwargs,
                 )
 
                 if k > 1:
-                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.k-{k-1}.test.jsonl"
+                    output_name = f"{config['dataset_name'].lower()}.{task.lower()}.k-{k}.test.jsonl"
                 else:
                     output_name = f"{config['dataset_name'].lower()}.{task.lower()}.test.jsonl"
 
@@ -168,6 +223,11 @@ def main(args):
 
         # Disable paraphrases if set
         config["disable_paraphrases"] = args.disable_paraphrases
+
+        # Check few-shot examples from
+        if "few-shot_examples_from" not in config:
+            config["few-shot_examples_from"] = None
+            # TODO: Implement few-shot examples from train or other files
 
         # Remove guidelines if baseline
         config["remove_guidelines"] = args.baseline

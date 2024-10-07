@@ -9,6 +9,7 @@
     "train_file": "data/wikievents/train.sentence.jsonl",
     "dev_file": "data/wikievents/dev.sentence.jsonl",
     "test_file": "data/wikievents/test.sentence.jsonl",
+    "few-shot_examples_from": "data/wikievents/train.sentence.jsonl",
     "prompt_template": "templates/user_prompt.j2",
     "parallel_instances": 15,
     "use_chat_format": true,

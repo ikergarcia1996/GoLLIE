@@ -6,6 +6,7 @@
     "train_file": "data/CrossNer/literature/train.txt",
     "dev_file": "data/CrossNer/literature/dev.txt",
     "test_file": "data/CrossNer/literature/test.txt",
+    "few-shot_examples_from": "data/CrossNer/literature/train.txt",
     "prompt_template": "templates/user_prompt.j2",
     "parallel_instances": 15,
     "use_chat_format": true,

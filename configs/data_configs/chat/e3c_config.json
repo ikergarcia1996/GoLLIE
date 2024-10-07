@@ -6,6 +6,7 @@
     "train_file": "data/e3c/en-e3c-train.tsv",
     "dev_file": "data/e3c/en-e3c-dev.tsv",
     "test_file": "data/e3c/en-e3c-test.tsv",
+    "few-shot_examples_from": "data/e3c/en-e3c-train.tsv",
     "prompt_template": "templates/user_prompt.j2",
     "parallel_instances": 15,
     "use_chat_format": true,

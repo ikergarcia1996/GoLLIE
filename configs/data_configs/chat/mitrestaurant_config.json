@@ -6,6 +6,7 @@
     "train_file": "data/MITrestaurant/restauranttrain.bio",
     "dev_file": "data/MITrestaurant/restaurantdev.bio",
     "test_file": "data/MITrestaurant/restauranttest.bio",
+    "few-shot_examples_from": "data/MITrestaurant/restauranttrain.bio",
     "prompt_template": "templates/user_prompt.j2",
     "parallel_instances": 15,
     "use_chat_format": true,
